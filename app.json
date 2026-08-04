@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "ZK Rider",
+    "slug": "zk-rider-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "zkrider",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.example.zkrider",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "ZK Rider uses Bluetooth to connect to and control the scooter you unlock.",
+        "NSCameraUsageDescription": "ZK Rider uses the camera to scan the QR code on a scooter.",
+        "UIBackgroundModes": ["bluetooth-central"]
+      }
+    },
+    "android": {
+      "package": "com.example.zkrider",
+      "permissions": [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "ZK Rider uses Bluetooth to connect to and control the scooter you unlock."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ZK Rider uses the camera to scan the QR code on a scooter."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": null
+    }
+  }
+}
