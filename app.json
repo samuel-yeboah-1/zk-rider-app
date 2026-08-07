@@ -13,7 +13,9 @@
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "ZK Rider uses Bluetooth to connect to and control the scooter you unlock.",
         "NSCameraUsageDescription": "ZK Rider uses the camera to scan the QR code on a scooter.",
-        "UIBackgroundModes": ["bluetooth-central"]
+        "UIBackgroundModes": [
+          "bluetooth-central"
+        ]
       }
     },
     "android": {
@@ -30,7 +32,9 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central"],
+          "modes": [
+            "central"
+          ],
           "bluetoothAlwaysPermission": "ZK Rider uses Bluetooth to connect to and control the scooter you unlock."
         }
       ],
@@ -39,10 +43,11 @@
         {
           "cameraPermission": "ZK Rider uses the camera to scan the QR code on a scooter."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
-      "apiBaseUrl": null
+      "apiBaseUrl": "http://172.20.10.11:4000"
     }
   }
 }
