@@ -1,12 +1,21 @@
 {
   "expo": {
-    "name": "ZK Rider",
+    "name": "Aldin Cycles",
     "slug": "zk-rider-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "zkrider",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/aldin-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#040b12"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.example.zkrider",
@@ -47,7 +56,7 @@
       "expo-asset"
     ],
     "extra": {
-      "apiBaseUrl": "http://172.20.10.11:4000"
+      "apiBaseUrl": "http://192.168.1.219:4000"
     }
   }
 }

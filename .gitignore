@@ -9,3 +9,7 @@ android/
 *.orig.*
 .env
 .env.local
+
+server/data.db
+server/data.db-*
+server/fleet.local.json

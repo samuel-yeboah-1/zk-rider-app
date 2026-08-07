@@ -16,8 +16,8 @@ const navTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: theme.colors.bg,
-    card: theme.colors.surface,
+    background: theme.colors.bgDeep,
+    card: theme.colors.bgDeep,
     text: theme.colors.text,
     border: theme.colors.border,
     primary: theme.colors.primary,
@@ -31,16 +31,18 @@ export function RootNavigator() {
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator
         screenOptions={{
-          headerStyle: { backgroundColor: theme.colors.surface },
-          headerTintColor: theme.colors.text,
-          contentStyle: { backgroundColor: theme.colors.bg },
+          headerStyle: { backgroundColor: theme.colors.bgDeep },
+          headerTintColor: theme.colors.primary,
+          headerShadowVisible: false,
+          headerTitleStyle: { color: theme.colors.text, fontWeight: '800' },
+          contentStyle: { backgroundColor: theme.colors.bgDeep },
         }}
       >
         {!isAuthenticated ? (
-          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'ZK Rider' }} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Aldin Cycles' }} />
         ) : (
           <>
-            <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Find a scooter' }} />
+            <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Unlock" component={UnlockScreen} options={{ title: 'Unlock' }} />
             <Stack.Screen
               name="Ride"

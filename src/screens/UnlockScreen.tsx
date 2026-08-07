@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { api } from '../api/client';
 import { ApiError } from '../api/types';
 import { getBleManager, ScooterConnection, waitForPoweredOn } from '../ble/bleManager';
 import { ensureBlePermissions } from '../ble/permissions';
-import { Banner, Button, Card } from '../components/ui';
+import { Banner, Button, ScreenBackground } from '../components/ui';
 import { rideActions } from '../rideService';
 import { useRideStore } from '../state/rideStore';
 import { RootStackParamList } from '../navigation/types';
@@ -14,9 +14,15 @@ import { theme } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Unlock'>;
 
-type Step = { label: string; state: 'pending' | 'active' | 'done' | 'error' };
+type StepState = 'pending' | 'active' | 'done' | 'error';
+type Step = { label: string; hint: string; state: StepState };
 
-const STEPS = ['Authorizing ride', 'Checking Bluetooth', 'Connecting to scooter', 'Unlocking'] as const;
+const STEPS: Array<{ label: string; hint: string }> = [
+  { label: 'Authorizing ride', hint: 'Requesting access from the fleet' },
+  { label: 'Checking Bluetooth', hint: 'Waking the radio & permissions' },
+  { label: 'Connecting to scooter', hint: 'Locking on to the BLE signal' },
+  { label: 'Unlocking', hint: 'Sending the release command' },
+];
 
 export function UnlockScreen({ route, navigation }: Props) {
   const { imei } = route.params;
@@ -24,19 +30,19 @@ export function UnlockScreen({ route, navigation }: Props) {
   const setConnection = useRideStore((s) => s.setConnection);
   const clear = useRideStore((s) => s.clear);
 
-  const [steps, setSteps] = useState<Step[]>(STEPS.map((label) => ({ label, state: 'pending' })));
+  const [steps, setSteps] = useState<Step[]>(STEPS.map((s) => ({ ...s, state: 'pending' })));
   const [error, setError] = useState<string | null>(null);
   const connRef = useRef<ScooterConnection | null>(null);
   const cancelled = useRef(false);
 
-  function setStep(i: number, state: Step['state']) {
+  function setStep(i: number, state: StepState) {
     setSteps((prev) => prev.map((s, idx) => (idx === i ? { ...s, state } : s)));
   }
 
   async function run() {
     setError(null);
     cancelled.current = false;
-    setSteps(STEPS.map((label) => ({ label, state: 'pending' })));
+    setSteps(STEPS.map((s) => ({ ...s, state: 'pending' })));
     const manager = getBleManager();
 
     try {
@@ -71,8 +77,7 @@ export function UnlockScreen({ route, navigation }: Props) {
 
       navigation.replace('Ride');
     } catch (e) {
-      const msg =
-        e instanceof ApiError ? apiErrorMessage(e) : (e as Error)?.message ?? 'Unknown error';
+      const msg = e instanceof ApiError ? apiErrorMessage(e) : (e as Error)?.message ?? 'Unknown error';
       setError(msg);
       setSteps((prev) => prev.map((s) => (s.state === 'active' ? { ...s, state: 'error' } : s)));
       await connRef.current?.disconnect();
@@ -88,36 +93,133 @@ export function UnlockScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  const activeIndex = steps.findIndex((s) => s.state === 'active');
+  const doneCount = steps.filter((s) => s.state === 'done').length;
+  const hasError = steps.some((s) => s.state === 'error');
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.h1}>Unlocking scooter</Text>
-      <Text style={styles.imei}>{imei}</Text>
+    <ScreenBackground>
+      <View style={styles.content}>
+        <Text style={styles.kicker}>{hasError ? 'LINK INTERRUPTED' : 'ESTABLISHING LINK'}</Text>
+        <Text style={styles.h1}>{hasError ? 'Something stalled' : 'Waking your ride'}</Text>
+        <Text style={styles.imei}>{imei}</Text>
 
-      <Card style={{ marginTop: 16 }}>
-        {steps.map((s, i) => (
-          <View key={i} style={styles.step}>
-            <Text style={styles.stepIcon}>{icon(s.state)}</Text>
-            <Text style={[styles.stepLabel, s.state === 'error' && { color: theme.colors.danger }]}>
-              {s.label}
-            </Text>
-          </View>
-        ))}
-      </Card>
+        <Pulse active={activeIndex >= 0} error={hasError} done={doneCount === STEPS.length} progress={doneCount / STEPS.length} />
 
-      {error && <Banner tone="error" text={error} />}
-
-      {error && (
-        <View style={{ gap: 10, marginTop: 8 }}>
-          <Button label="Retry" onPress={run} />
-          <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
+        <View style={styles.steps}>
+          {steps.map((s, i) => (
+            <StepRow key={i} step={s} isLast={i === steps.length - 1} />
+          ))}
         </View>
-      )}
-    </ScrollView>
+
+        {error && (
+          <View style={styles.errorBox}>
+            <Banner tone="error" text={error} />
+            <View style={{ gap: 10, marginTop: 6 }}>
+              <Button label="Retry" onPress={run} />
+              <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
+            </View>
+          </View>
+        )}
+      </View>
+    </ScreenBackground>
   );
 }
 
-function icon(state: Step['state']): string {
-  return state === 'done' ? '✅' : state === 'active' ? '⏳' : state === 'error' ? '❌' : '⚪️';
+function Pulse({ active, error, done, progress }: { active: boolean; error: boolean; done: boolean; progress: number }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const color = error ? theme.colors.danger : done ? theme.colors.green : theme.colors.primary;
+
+  useEffect(() => {
+    if (!active || error || done) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const a = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    a.start();
+    return () => a.stop();
+  }, [active, error, done, pulse]);
+
+  return (
+    <View style={styles.orbWrap}>
+      {[0, 1].map((i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.orbRing,
+            { borderColor: color },
+            {
+              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+              transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5 + i * 0.2, 1.15 + i * 0.15] }) }],
+            },
+          ]}
+        />
+      ))}
+      <View style={[styles.orbCore, { backgroundColor: color }, theme.glow(color, 26, 0.9)]}>
+        <Text style={styles.orbPct}>{done ? '✓' : error ? '!' : `${Math.round(progress * 100)}%`}</Text>
+      </View>
+    </View>
+  );
+}
+
+function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (step.state !== 'active') {
+      pulse.setValue(0);
+      return;
+    }
+    const a = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    a.start();
+    return () => a.stop();
+  }, [step.state, pulse]);
+
+  const color =
+    step.state === 'done'
+      ? theme.colors.green
+      : step.state === 'active'
+      ? theme.colors.primary
+      : step.state === 'error'
+      ? theme.colors.danger
+      : theme.colors.textDim;
+
+  const glyph = step.state === 'done' ? '✓' : step.state === 'error' ? '✕' : step.state === 'active' ? '' : '';
+
+  return (
+    <View style={styles.stepRow}>
+      <View style={styles.stepRail}>
+        <Animated.View
+          style={[
+            styles.stepNode,
+            { borderColor: color, backgroundColor: step.state === 'done' ? color : 'transparent' },
+            step.state === 'active' ? { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.4] }) } : null,
+            step.state !== 'pending' ? theme.glow(color, 10, 0.5) : null,
+          ]}
+        >
+          <Text style={[styles.stepGlyph, { color: step.state === 'done' ? theme.colors.primaryText : color }]}>{glyph}</Text>
+        </Animated.View>
+        {!isLast && <View style={[styles.stepLine, { backgroundColor: step.state === 'done' ? theme.colors.green : theme.colors.border }]} />}
+      </View>
+      <View style={styles.stepText}>
+        <Text style={[styles.stepLabel, { color: step.state === 'pending' ? theme.colors.textDim : theme.colors.text }]}>{step.label}</Text>
+        <Text style={styles.stepHint}>
+          {step.state === 'active' ? step.hint + '…' : step.state === 'done' ? 'Done' : step.state === 'error' ? 'Failed here' : step.hint}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function apiErrorMessage(e: ApiError): string {
@@ -138,11 +240,25 @@ function apiErrorMessage(e: ApiError): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.bg },
-  content: { padding: 20, gap: 12 },
-  h1: { fontSize: 24, fontWeight: '800', color: theme.colors.text },
-  imei: { color: theme.colors.textMuted, fontSize: 15, marginTop: 4 },
-  step: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
-  stepIcon: { fontSize: 18, width: 24, textAlign: 'center' },
-  stepLabel: { color: theme.colors.text, fontSize: 16 },
+  content: { flex: 1, padding: 24, paddingTop: 20 },
+  kicker: { color: theme.colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 3 },
+  h1: { fontSize: 30, fontWeight: '900', color: theme.colors.text, marginTop: 6, letterSpacing: -0.5 },
+  imei: { color: theme.colors.textMuted, fontSize: 15, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 0.5 },
+
+  orbWrap: { alignItems: 'center', justifyContent: 'center', height: 150, marginVertical: 18 },
+  orbRing: { position: 'absolute', width: 120, height: 120, borderRadius: 60, borderWidth: 1.5 },
+  orbCore: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center' },
+  orbPct: { color: theme.colors.primaryText, fontSize: 22, fontWeight: '900', fontFamily: theme.font.mono },
+
+  steps: { marginTop: 8 },
+  stepRow: { flexDirection: 'row', gap: 14 },
+  stepRail: { alignItems: 'center', width: 34 },
+  stepNode: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  stepGlyph: { fontSize: 15, fontWeight: '900' },
+  stepLine: { width: 2, flex: 1, minHeight: 26, marginVertical: 2 },
+  stepText: { flex: 1, paddingBottom: 22, paddingTop: 4 },
+  stepLabel: { fontSize: 17, fontWeight: '700' },
+  stepHint: { color: theme.colors.textMuted, fontSize: 13, marginTop: 3 },
+
+  errorBox: { marginTop: 8 },
 });

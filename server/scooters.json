@@ -1,0 +1,16 @@
+[
+  {
+    "imei": "860111111111111",
+    "blePassword": "Zk-Demo-Dynamic",
+    "passwordMode": "dynamic",
+    "batteryPct": 92,
+    "currentMileage": 1240
+  },
+  {
+    "imei": "860333333333333",
+    "blePassword": "Zk-Static-01",
+    "passwordMode": "static",
+    "batteryPct": 88,
+    "currentMileage": 12
+  }
+]
