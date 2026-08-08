@@ -7,14 +7,14 @@
     "scheme": "zkrider",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-dark.png",
     "splash": {
       "image": "./assets/aldin-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#040b12"
     },
     "web": {
-      "favicon": "./assets/icon.png"
+      "favicon": "./assets/icon-dark.png"
     },
     "ios": {
       "supportsTablet": false,
@@ -30,6 +30,10 @@
     },
     "android": {
       "package": "com.example.zkrider",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-fg.png",
+        "backgroundColor": "#0b1826"
+      },
       "permissions": [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
