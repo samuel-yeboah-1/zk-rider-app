@@ -14,11 +14,15 @@ import { theme } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+const IMEI_LENGTH = 15;
+const IMEI_RE = /^\d{15}$/;
+
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [imeiInput, setImeiInput] = useState('');
   const [imei, setImei] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [inputError, setInputError] = useState<string | null>(null);
 
   const scooterQuery = useQuery({
     queryKey: ['scooter', imei],
@@ -27,11 +31,23 @@ export function HomeScreen({ navigation }: Props) {
     retry: false,
   });
 
-  function lookup(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    setImeiInput(trimmed);
-    setImei(trimmed);
+  const isValidImei = IMEI_RE.test(imeiInput);
+
+  function onChangeImei(value: string) {
+    setImeiInput(value.replace(/\D/g, '').slice(0, IMEI_LENGTH));
+    if (inputError) setInputError(null);
+  }
+
+  function lookup(rawValue: string) {
+    const digits = rawValue.replace(/\D/g, '');
+    if (!IMEI_RE.test(digits)) {
+      setImeiInput(digits.slice(0, IMEI_LENGTH));
+      setInputError(`IMEI must be exactly ${IMEI_LENGTH} digits — you entered ${digits.length}.`);
+      return;
+    }
+    setInputError(null);
+    setImeiInput(digits);
+    setImei(digits);
   }
 
   const scooter = scooterQuery.data;
@@ -53,7 +69,7 @@ export function HomeScreen({ navigation }: Props) {
           onPress={() => setScanning(true)}
           style={({ pressed }) => [styles.scanBtn, theme.glow(theme.colors.primary, 20, 0.5), { opacity: pressed ? 0.9 : 1 }]}
         >
-          <Text style={styles.scanIcon}>⬡</Text>
+          <QrGlyph size={44} color={theme.colors.primary} />
           <Text style={styles.scanText}>SCAN QR CODE</Text>
         </Pressable>
 
@@ -67,15 +83,21 @@ export function HomeScreen({ navigation }: Props) {
           <TextInput
             style={styles.input}
             value={imeiInput}
-            onChangeText={setImeiInput}
+            onChangeText={onChangeImei}
             placeholder="860•••••••••••••"
             placeholderTextColor={theme.colors.textDim}
             keyboardType="number-pad"
             returnKeyType="search"
+            maxLength={IMEI_LENGTH}
             onSubmitEditing={() => lookup(imeiInput)}
           />
-          <Button label="Find" onPress={() => lookup(imeiInput)} disabled={!imeiInput.trim()} style={{ paddingHorizontal: 22 }} />
+          <Button label="Find" onPress={() => lookup(imeiInput)} disabled={!isValidImei} style={{ paddingHorizontal: 22 }} />
         </View>
+
+        {imeiInput.length > 0 && !isValidImei && !inputError && (
+          <Text style={styles.counter}>{imeiInput.length}/{IMEI_LENGTH} digits</Text>
+        )}
+        {inputError && <Banner tone="error" text={inputError} />}
 
         {scooterQuery.isFetching && <RadarLoader imei={imei ?? ''} />}
 
@@ -185,6 +207,39 @@ function RadarLoader({ imei }: { imei: string }) {
   );
 }
 
+function QrGlyph({ size = 44, color = theme.colors.primary }: { size?: number; color?: string }) {
+  const fs = size * 0.34;
+  const finder = (pos: object, key: string) => (
+    <View
+      key={key}
+      style={[
+        { position: 'absolute', width: fs, height: fs, borderRadius: 3, borderWidth: 2.5, borderColor: color, alignItems: 'center', justifyContent: 'center' },
+        pos,
+      ]}
+    >
+      <View style={{ width: fs * 0.42, height: fs * 0.42, borderRadius: 1, backgroundColor: color }} />
+    </View>
+  );
+  const dot = (top: number, left: number, key: string) => (
+    <View key={key} style={{ position: 'absolute', top: top * size, left: left * size, width: size * 0.1, height: size * 0.1, borderRadius: 1, backgroundColor: color }} />
+  );
+  return (
+    <View style={{ width: size, height: size }}>
+      {finder({ top: 0, left: 0 }, 'tl')}
+      {finder({ top: 0, right: 0 }, 'tr')}
+      {finder({ bottom: 0, left: 0 }, 'bl')}
+      {dot(0.5, 0.52, 'd1')}
+      {dot(0.5, 0.74, 'd2')}
+      {dot(0.5, 0.9, 'd3')}
+      {dot(0.66, 0.62, 'd4')}
+      {dot(0.66, 0.84, 'd5')}
+      {dot(0.82, 0.52, 'd6')}
+      {dot(0.82, 0.74, 'd7')}
+      {dot(0.9, 0.9, 'd8')}
+    </View>
+  );
+}
+
 function StateChip({ on, labelOn, labelOff, color = theme.colors.green }: { on: boolean; labelOn: string; labelOff: string; color?: string }) {
   const c = on ? color : theme.colors.textDim;
   return (
@@ -212,7 +267,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,224,255,0.06)',
     gap: 8,
   },
-  scanIcon: { color: theme.colors.primary, fontSize: 40, fontWeight: '400' },
   scanText: { color: theme.colors.primary, fontSize: 15, fontWeight: '800', letterSpacing: 2 },
 
   orRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
@@ -233,6 +287,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.font.mono,
     letterSpacing: 1,
   },
+  counter: { color: theme.colors.textMuted, fontSize: 12, marginTop: 8, fontFamily: theme.font.mono, letterSpacing: 1 },
 
   radarWrap: { alignItems: 'center', marginTop: 34, marginBottom: 10 },
   radar: { width: 160, height: 160, alignItems: 'center', justifyContent: 'center' },
