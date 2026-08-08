@@ -5,7 +5,8 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -14,7 +15,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://zk-rider-app.onrender.com"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "android": {
@@ -22,7 +24,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://zk-rider-app.onrender.com"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
