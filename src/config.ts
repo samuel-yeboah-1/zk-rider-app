@@ -15,6 +15,10 @@ function metroHost(): string | null {
 }
 
 function defaultBaseUrl(): string {
+  // Baked into hosted/standalone builds via EAS (eas.json env).
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (typeof envUrl === 'string' && envUrl.length > 0) return envUrl;
+
   const extra = (Constants.expoConfig?.extra ?? {}) as { apiBaseUrl?: unknown };
   if (typeof extra.apiBaseUrl === 'string' && extra.apiBaseUrl.length > 0) {
     return extra.apiBaseUrl;

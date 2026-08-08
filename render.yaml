@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: aldin-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run server
+    healthCheckPath: /health
+    envVars:
+      - key: FLEET_PASSWORD
+        sync: false
+      - key: NODE_VERSION
+        value: "20"
