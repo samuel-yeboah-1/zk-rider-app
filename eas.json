@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-YOUR-RENDER-URL.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://zk-rider-app.onrender.com"
       }
     },
     "production": {
@@ -21,7 +21,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-YOUR-RENDER-URL.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://zk-rider-app.onrender.com"
       }
     }
   },
