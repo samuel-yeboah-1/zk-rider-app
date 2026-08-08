@@ -29,12 +29,12 @@ export const theme = {
     warning: '#ffb74d',
     danger: '#ff5470',
   },
-  glow: (color: string, radius = 16, opacity = 0.9) => ({
-    shadowColor: color,
-    shadowOpacity: opacity,
-    shadowRadius: radius,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: Math.round(radius / 2),
+  glow: (_color: string, _radius = 16, _opacity = 0.9) => ({} as {
+    shadowColor?: string;
+    shadowOpacity?: number;
+    shadowRadius?: number;
+    shadowOffset?: { width: number; height: number };
+    elevation?: number;
   }),
   font: {
     mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,

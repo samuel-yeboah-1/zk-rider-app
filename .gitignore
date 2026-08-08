@@ -13,3 +13,6 @@ android/
 server/data.db
 server/data.db-*
 server/fleet.local.json
+
+# Source spreadsheets (not committed)
+*.xlsx

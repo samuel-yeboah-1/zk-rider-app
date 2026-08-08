@@ -10,7 +10,8 @@ export type CommandName =
   | 'BKWRN'
   | 'BKPWD'
   | 'BKINF'
-  | 'BKVER';
+  | 'BKVER'
+  | 'GTRTO';
 
 export const LockCommand = {
   UnlockEcu: 0,
@@ -147,6 +148,10 @@ export const commands = {
 
   queryVersion(pwd: string): string {
     return buildFrame('BKVER', [pwd, 0]);
+  },
+
+  reset(pwd: string): string {
+    return buildFrame('GTRTO', [pwd, 3, '', 0, '', '', '', '', '', 'FFFF']);
   },
 };
 

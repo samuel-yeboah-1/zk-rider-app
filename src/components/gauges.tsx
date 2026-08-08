@@ -32,19 +32,7 @@ export function RadialGauge({
   color?: string;
   loading?: boolean;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
   const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const p = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    );
-    p.start();
-    return () => p.stop();
-  }, [pulse]);
 
   useEffect(() => {
     if (!loading) {
@@ -64,28 +52,10 @@ export function RadialGauge({
   const tickH = size * 0.072;
   const step = 360 / tickCount;
 
-  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.32] });
-  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.02] });
   const spinDeg = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          {
-            position: 'absolute',
-            width: size * 0.78,
-            height: size * 0.78,
-            borderRadius: size,
-            backgroundColor: gaugeColor,
-            opacity: haloOpacity,
-            transform: [{ scale: haloScale }],
-          },
-          theme.glow(gaugeColor, 40, 0.5),
-        ]}
-      />
-
       {Array.from({ length: tickCount }).map((_, i) => {
         const on = loading ? false : i < lit;
         const leading = on && i === lit - 1;

@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -22,7 +23,9 @@ export function HomeScreen({ navigation }: Props) {
   const [imeiInput, setImeiInput] = useState('');
   const [imei, setImei] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [vehicleInput, setVehicleInput] = useState('');
 
   const scooterQuery = useQuery({
     queryKey: ['scooter', imei],
@@ -50,6 +53,63 @@ export function HomeScreen({ navigation }: Props) {
     setImei(digits);
   }
 
+  async function onScanned(raw: string) {
+    setScanning(false);
+    const value = raw.trim();
+    if (IMEI_RE.test(value)) {
+      lookup(value);
+      return;
+    }
+    const m = value.match(/vehicle\/([A-Za-z0-9]+)/i) || value.match(/([A-Za-z0-9]+)\/?$/);
+    const vehicleId = m ? m[1] : null;
+    if (!vehicleId) {
+      const embedded = value.match(/\d{15}/);
+      if (embedded) lookup(embedded[0]);
+      else setInputError('Unrecognized QR code — not an Aldin bike.');
+      return;
+    }
+    setResolving(true);
+    try {
+      const scooter = await api.resolveVehicle(vehicleId);
+      setImeiInput(scooter.imei);
+      setImei(scooter.imei);
+      setInputError(null);
+    } catch (e) {
+      const code = (e as ApiError)?.code;
+      setInputError(
+        code === 'vehicle_not_found'
+          ? 'This QR code isn’t a registered Aldin bike.'
+          : 'Could not resolve the scanned code.'
+      );
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function lookupVehicle() {
+    const v = vehicleInput.trim();
+    if (!v) return;
+    setResolving(true);
+    setInputError(null);
+    try {
+      const scooter = await api.resolveVehicle(v);
+      setImeiInput(scooter.imei);
+      setImei(scooter.imei);
+    } catch (e) {
+      const code = (e as ApiError)?.code;
+      setInputError(code === 'vehicle_not_found' ? `No bike found for vehicle #${v}.` : 'Could not look up that vehicle number.');
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      if (imei) scooterQuery.refetch();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [imei])
+  );
+
   const scooter = scooterQuery.data;
   const canUnlock = scooter?.available && scooter.lockState === 'locked';
 
@@ -67,7 +127,7 @@ export function HomeScreen({ navigation }: Props) {
 
         <Pressable
           onPress={() => setScanning(true)}
-          style={({ pressed }) => [styles.scanBtn, theme.glow(theme.colors.primary, 20, 0.5), { opacity: pressed ? 0.9 : 1 }]}
+          style={({ pressed }) => [styles.scanBtn, { opacity: pressed ? 0.9 : 1 }]}
         >
           <QrGlyph size={44} color={theme.colors.primary} />
           <Text style={styles.scanText}>SCAN QR CODE</Text>
@@ -80,6 +140,20 @@ export function HomeScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            value={vehicleInput}
+            onChangeText={(v) => setVehicleInput(v.replace(/\D/g, '').slice(0, 6))}
+            placeholder="Vehicle no. — e.g. 91334"
+            placeholderTextColor={theme.colors.textDim}
+            keyboardType="number-pad"
+            returnKeyType="search"
+            onSubmitEditing={lookupVehicle}
+          />
+          <Button label="Go" onPress={lookupVehicle} disabled={!vehicleInput.trim()} style={{ paddingHorizontal: 20 }} />
+        </View>
+
+        <View style={[styles.inputRow, { marginTop: 10 }]}>
           <TextInput
             style={styles.input}
             value={imeiInput}
@@ -97,9 +171,10 @@ export function HomeScreen({ navigation }: Props) {
         {imeiInput.length > 0 && !isValidImei && !inputError && (
           <Text style={styles.counter}>{imeiInput.length}/{IMEI_LENGTH} digits</Text>
         )}
+
         {inputError && <Banner tone="error" text={inputError} />}
 
-        {scooterQuery.isFetching && <RadarLoader imei={imei ?? ''} />}
+        {(resolving || scooterQuery.isFetching) && <RadarLoader imei={imei ?? ''} />}
 
         {scooterQuery.isError && !scooterQuery.isFetching && (
           <Banner
@@ -115,6 +190,7 @@ export function HomeScreen({ navigation }: Props) {
         {scooter && !scooterQuery.isFetching && (
           <Card style={{ marginTop: 18 }} glowColor={canUnlock ? theme.colors.green : theme.colors.warning}>
             <SectionTitle color={canUnlock ? theme.colors.green : theme.colors.warning}>Unit acquired</SectionTitle>
+            {scooter.vehicleId ? <Text style={styles.cardVehicle}>Bike #{scooter.vehicleId}</Text> : null}
             <Text style={styles.cardImei}>{scooter.imei}</Text>
 
             <View style={styles.cardGrid}>
@@ -139,14 +215,7 @@ export function HomeScreen({ navigation }: Props) {
           </Card>
         )}
 
-        <QrScanner
-          visible={scanning}
-          onClose={() => setScanning(false)}
-          onScanned={(value) => {
-            setScanning(false);
-            lookup(value);
-          }}
-        />
+        <QrScanner visible={scanning} onClose={() => setScanning(false)} onScanned={onScanned} />
       </ScrollView>
     </ScreenBackground>
   );
@@ -311,7 +380,8 @@ const styles = StyleSheet.create({
   radarText: { color: theme.colors.primary, fontSize: 13, fontWeight: '700', letterSpacing: 1, marginTop: 20 },
   radarImei: { color: theme.colors.textDim, fontSize: 13, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 1 },
 
-  cardImei: { color: theme.colors.text, fontSize: 20, fontFamily: theme.font.mono, letterSpacing: 0.5, marginBottom: 14 },
+  cardVehicle: { color: theme.colors.text, fontSize: 22, fontWeight: '900', letterSpacing: 0.3, marginBottom: 2 },
+  cardImei: { color: theme.colors.textMuted, fontSize: 14, fontFamily: theme.font.mono, letterSpacing: 0.5, marginBottom: 14 },
   cardGrid: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   statusRow: { flexDirection: 'row', gap: 10 },
   chip: {

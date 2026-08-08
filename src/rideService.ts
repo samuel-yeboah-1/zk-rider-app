@@ -1,5 +1,6 @@
 import { api } from './api/client';
-import { AckTimeoutError, ScooterConnection } from './ble/bleManager';
+import { AckTimeoutError } from './ble/bleManager';
+import { IScooterConnection } from './ble/connection';
 import {
   commands,
   LockCommand,
@@ -28,7 +29,7 @@ async function audit(command: string, params: Array<string | number>, ackStatus?
   }
 }
 
-function requireConnection(): ScooterConnection {
+function requireConnection(): IScooterConnection {
   const conn = useRideStore.getState().connection;
   if (!conn) throw new Error('Not connected to a scooter');
   return conn;
@@ -51,6 +52,33 @@ export const rideActions = {
     const { ecuLocked, status } = parseBksctAck(ack);
     void audit('BKSCT', [pwd, LockCommand.LockEcu], status);
     return ecuLocked;
+  },
+
+  async enhancedUnlock(): Promise<boolean> {
+    const conn = requireConnection();
+    const pwd = useRideStore.getState().getPassword();
+    const ack = await conn.send(commands.lockControl(pwd, LockCommand.EnhancedUnlockEcu), 'BKSCT');
+    const { ecuUnlocked, status } = parseBksctAck(ack);
+    void audit('BKSCT', [pwd, LockCommand.EnhancedUnlockEcu], status);
+    return ecuUnlocked;
+  },
+
+  async unlockBattery(): Promise<boolean> {
+    const conn = requireConnection();
+    const pwd = useRideStore.getState().getPassword();
+    const ack = await conn.send(commands.lockControl(pwd, LockCommand.UnlockBattery), 'BKSCT');
+    const { status } = parseBksctAck(ack);
+    void audit('BKSCT', [pwd, LockCommand.UnlockBattery], status);
+    return status === LockCommand.UnlockBattery;
+  },
+
+  async lockBattery(): Promise<boolean> {
+    const conn = requireConnection();
+    const pwd = useRideStore.getState().getPassword();
+    const ack = await conn.send(commands.lockControl(pwd, LockCommand.LockBattery), 'BKSCT');
+    const { status } = parseBksctAck(ack);
+    void audit('BKSCT', [pwd, LockCommand.LockBattery], status);
+    return status === LockCommand.LockBattery;
   },
 
   async setHeadlamp(on: boolean): Promise<boolean> {
@@ -110,6 +138,13 @@ export const rideActions = {
     const pwd = useRideStore.getState().getPassword();
     const ack = await conn.send(commands.queryVersion(pwd), 'BKVER');
     return parseVersionAck(ack);
+  },
+
+  async reset(): Promise<void> {
+    const conn = requireConnection();
+    const pwd = useRideStore.getState().getPassword();
+    await conn.sendRaw(commands.reset(pwd));
+    void audit('GTRTO', [pwd, 3, '', 0, '', '', '', '', '', 'FFFF']);
   },
 };
 

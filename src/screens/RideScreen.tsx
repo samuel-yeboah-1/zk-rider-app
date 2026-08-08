@@ -1,23 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { api } from '../api/client';
 import { AckTimeoutError, rideActions } from '../rideService';
 import { ScooterInfo } from '../ble/protocol';
-import { Banner, Button, Card, ScreenBackground, SectionTitle } from '../components/ui';
-import { RadialGauge, StatTile, batteryColor } from '../components/gauges';
+import { Banner, ScreenBackground, SectionTitle } from '../components/ui';
+import { SlideAction } from '../components/SlideAction';
+import { RadialGauge, batteryColor } from '../components/gauges';
 import { log } from '../log';
 import { useRideStore } from '../state/rideStore';
 import { RootStackParamList } from '../navigation/types';
 import { theme } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Ride'>;
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 const POLL_INTERVAL_MS = 4000;
 const LAMP_SYNC_GRACE_MS = 6000;
 
 export function RideScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const rideId = useRideStore((s) => s.rideId);
   const imei = useRideStore((s) => s.imei);
   const isConnected = useRideStore((s) => s.isConnected);
@@ -72,7 +77,8 @@ export function RideScreen({ navigation }: Props) {
     }
   }
 
-  async function toggleLamp(next: boolean) {
+  async function toggleLamp() {
+    const next = !lamp;
     const prev = lamp;
     lampLockUntil.current = Date.now() + LAMP_SYNC_GRACE_MS;
     setLamp(next);
@@ -108,12 +114,18 @@ export function RideScreen({ navigation }: Props) {
     }
   }
 
+  function onReset() {
+    Alert.alert('Reset controller?', 'This reboots the scooter controller and may briefly disconnect it.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reset', style: 'destructive', onPress: () => withBusy('reset', async () => void (await rideActions.reset())) },
+    ]);
+  }
+
   if (!rideId) {
     return (
       <ScreenBackground>
         <View style={styles.centered}>
           <Text style={styles.muted}>No active ride.</Text>
-          <Button label="Back to home" onPress={() => navigation.replace('Home')} />
         </View>
       </ScreenBackground>
     );
@@ -122,14 +134,13 @@ export function RideScreen({ navigation }: Props) {
   const battery = info?.batteryPct ?? null;
   const battColor = battery == null ? theme.colors.primary : batteryColor(battery);
   const loadingInfo = info == null && isConnected;
+  const disabled = !isConnected || !!busy;
+  const ecuLocked = info?.locked ?? false;
 
   return (
     <ScreenBackground>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={theme.colors.primary} />}
-      >
+      <View style={[styles.screen, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 12 }]}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
             <Text style={styles.kicker}>ACTIVE RIDE</Text>
@@ -138,142 +149,191 @@ export function RideScreen({ navigation }: Props) {
           <StatusPill connected={isConnected} />
         </View>
 
-        {!isConnected && <Banner tone="error" text="Bluetooth link lost — move closer to reconnect." />}
+        {!isConnected && <Banner tone="error" text="Bluetooth link lost — move closer." />}
         {statusError && isConnected && <Banner tone="error" text={statusError} />}
 
-        <View style={styles.gaugeWrap}>
-          <RadialGauge
-            value={battery}
-            label="Battery"
-            unit="%"
-            color={battColor}
-            loading={loadingInfo}
+        <View style={styles.hero}>
+          <RadialGauge value={battery} label="Battery" unit="%" color={battColor} loading={loadingInfo} size={148} />
+          <View style={styles.metricsCol}>
+            <Metric label="Speed" value={info ? `${info.speedKmh}` : '––'} unit="km/h" color={theme.colors.sky} />
+            <Metric label="This ride" value={info ? `${info.currentMileageKm}` : '––'} unit="km" color={theme.colors.blue} />
+            <Metric label="Total" value={info ? `${info.totalMileageKm}` : '––'} unit="km" color={theme.colors.magenta} />
+            <Metric label="Ride time" value={info ? formatDuration(info.rideTimeSeconds) : '––'} color={theme.colors.green} />
+          </View>
+        </View>
+
+        <SectionTitle color={theme.colors.sky}>Controls</SectionTitle>
+        <View style={styles.ctrlRow}>
+          <IconTile
+            icon={ecuLocked ? 'lock-open-variant' : 'lock'}
+            label={ecuLocked ? 'Unlock ECU' : 'Lock ECU'}
+            color={ecuLocked ? theme.colors.green : theme.colors.warning}
+            busy={busy === 'ecu'}
+            disabled={disabled}
+            onPress={() =>
+              withBusy('ecu', async () => {
+                if (ecuLocked) await rideActions.unlock();
+                else await rideActions.lock();
+                await refresh();
+              })
+            }
+          />
+          <IconTile
+            icon="battery-lock-open"
+            label="Batt unlock"
+            color={theme.colors.green}
+            busy={busy === 'battunlock'}
+            disabled={disabled}
+            onPress={() => withBusy('battunlock', async () => void (await rideActions.unlockBattery()))}
+          />
+          <IconTile
+            icon="battery-lock"
+            label="Batt lock"
+            color={theme.colors.skyLight}
+            busy={busy === 'battlock'}
+            disabled={disabled}
+            onPress={() => withBusy('battlock', async () => void (await rideActions.lockBattery()))}
+          />
+        </View>
+        <View style={styles.ctrlRow}>
+          <IconTile
+            icon={lamp ? 'lightbulb-on' : 'lightbulb-outline'}
+            label={lamp ? 'Lamp on' : 'Headlamp'}
+            color={lamp ? theme.colors.sky : theme.colors.textMuted}
+            active={lamp}
+            indicator
+            busy={busy === 'lamp'}
+            disabled={disabled && busy !== 'lamp'}
+            onPress={toggleLamp}
+          />
+          <IconTile
+            icon="map-marker"
+            label="Locate"
+            color={theme.colors.sky}
+            busy={busy === 'locate'}
+            disabled={disabled}
+            onPress={() => withBusy('locate', async () => void (await rideActions.locate()))}
+          />
+          <IconTile
+            icon="alert"
+            label="Warn"
+            color={theme.colors.danger}
+            busy={busy === 'warn'}
+            disabled={disabled}
+            onPress={() => withBusy('warn', async () => void (await rideActions.warn()))}
           />
         </View>
 
-        <View style={styles.grid}>
-          <StatTile label="Speed" value={info ? `${info.speedKmh}` : '––'} unit="km/h" color={theme.colors.cyan} />
-          <StatTile label="This ride" value={info ? `${info.currentMileageKm}` : '––'} unit="km" color={theme.colors.accent} />
-        </View>
-        <View style={styles.grid}>
-          <StatTile label="Total mileage" value={info ? `${info.totalMileageKm}` : '––'} unit="km" color={theme.colors.magenta} />
-          <StatTile label="Ride time" value={info ? formatDuration(info.rideTimeSeconds) : '––'} color={theme.colors.green} />
-        </View>
+        <Pressable
+          onPress={onReset}
+          disabled={disabled}
+          style={({ pressed }) => [styles.resetBtn, { opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }]}
+        >
+          {busy === 'reset' ? (
+            <ActivityIndicator color={theme.colors.textMuted} />
+          ) : (
+            <>
+              <MaterialCommunityIcons name="restart" size={18} color={theme.colors.textMuted} />
+              <Text style={styles.resetText}>Reset controller</Text>
+            </>
+          )}
+        </Pressable>
 
-        <Card style={{ marginTop: 16 }} glowColor={theme.colors.accent}>
-          <SectionTitle color={theme.colors.accent}>Controls</SectionTitle>
-
-          <View style={styles.lampRow}>
-            <View>
-              <Text style={styles.lampLabel}>Headlamp</Text>
-              <Text style={styles.lampState}>
-                {info ? (info.headlampOn ? 'Beam active' : 'Beam off') : 'Reading…'}
-              </Text>
-            </View>
-            <NeonToggle value={lamp} onChange={toggleLamp} disabled={!isConnected || busy === 'lamp'} busy={busy === 'lamp'} />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.actionRow}>
-            <Button
-              label="Locate"
-              variant="secondary"
-              loading={busy === 'locate'}
-              disabled={!isConnected || !!busy}
-              onPress={() => withBusy('locate', async () => void (await rideActions.locate()))}
-              style={{ flex: 1 }}
-            />
-            <Button
-              label="Warn"
-              variant="secondary"
-              loading={busy === 'warn'}
-              disabled={!isConnected || !!busy}
-              onPress={() => withBusy('warn', async () => void (await rideActions.warn()))}
-              style={{ flex: 1 }}
-            />
-          </View>
-          <Text style={styles.disclaimer}>
-            Locate &amp; Warn are protocol labels — the scooter's exact physical behavior is undefined.
-          </Text>
-        </Card>
-
-        <View style={{ height: 18 }} />
-        <Button label="End ride & lock" variant="danger" loading={ending} onPress={onEndRide} />
-        <View style={{ height: 24 }} />
-      </ScrollView>
+        </ScrollView>
+        <SlideAction
+          label="Slide to end & lock"
+          busyLabel="Locking…"
+          icon="lock"
+          color={theme.colors.danger}
+          onComplete={endRide}
+          busy={ending}
+        />
+      </View>
     </ScreenBackground>
+  );
+}
+
+function IconTile({
+  icon,
+  label,
+  color = theme.colors.text,
+  onPress,
+  active,
+  indicator,
+  busy,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  color?: string;
+  onPress: () => void;
+  active?: boolean;
+  indicator?: boolean;
+  busy?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled || busy}
+      style={({ pressed }) => [
+        styles.tile,
+        active && { borderColor: color, borderWidth: 1.5 },
+        { opacity: disabled ? 0.4 : pressed ? 0.8 : 1 },
+      ]}
+    >
+      {indicator && active ? <View style={[styles.tileDot, { backgroundColor: color }]} /> : null}
+      {busy ? (
+        <ActivityIndicator color={color} />
+      ) : (
+        <MaterialCommunityIcons name={icon} size={27} color={color} />
+      )}
+      <Text style={[styles.tileLabel, active && { color }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Metric({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
+  return (
+    <View style={styles.metric}>
+      <View style={[styles.metricBar, { backgroundColor: color }]} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue}>
+          {value}
+          {unit ? <Text style={[styles.metricUnit, { color }]}> {unit}</Text> : null}
+        </Text>
+      </View>
+    </View>
   );
 }
 
 function StatusPill({ connected }: { connected: boolean }) {
   const color = connected ? theme.colors.green : theme.colors.danger;
   return (
-    <View style={[styles.pill, { borderColor: color }, theme.glow(color, 10, 0.25)]}>
+    <View style={[styles.pill, { borderColor: color }]}>
       <View style={[styles.pillDot, { backgroundColor: color }, theme.glow(color, 8, 1)]} />
       <Text style={[styles.pillText, { color }]}>{connected ? 'LINKED' : 'LOST'}</Text>
     </View>
   );
 }
 
-function NeonToggle({
-  value,
-  onChange,
-  disabled,
-  busy,
-}: {
-  value: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-  busy?: boolean;
-}) {
-  const color = theme.colors.primary;
-  return (
-    <Pressable
-      onPress={() => onChange(!value)}
-      disabled={disabled}
-      style={[
-        styles.toggle,
-        {
-          borderColor: value ? color : theme.colors.border,
-          backgroundColor: value ? 'rgba(34,224,255,0.12)' : 'transparent',
-          opacity: disabled ? 0.5 : 1,
-        },
-        value ? theme.glow(color, 14, 0.4) : null,
-      ]}
-    >
-      <View
-        style={[
-          styles.knob,
-          {
-            alignSelf: value ? 'flex-end' : 'flex-start',
-            backgroundColor: value ? color : theme.colors.textDim,
-          },
-          value ? theme.glow(color, 10, 1) : null,
-        ]}
-      />
-      <Text style={[styles.toggleText, { color: value ? color : theme.colors.textMuted, left: value ? 12 : undefined, right: value ? undefined : 12 }]}>
-        {busy ? '···' : value ? 'ON' : 'OFF'}
-      </Text>
-    </Pressable>
-  );
-}
-
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
+  screen: { flex: 1, paddingHorizontal: 18 },
+  scroll: { flex: 1 },
+  content: { paddingBottom: 12 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
   muted: { color: theme.colors.textMuted, fontSize: 16 },
 
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  kicker: { color: theme.colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 3 },
-  imei: { color: theme.colors.text, fontSize: 18, fontFamily: theme.font.mono, marginTop: 4, letterSpacing: 0.5 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  kicker: { color: theme.colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 3 },
+  imei: { color: theme.colors.text, fontSize: 16, fontFamily: theme.font.mono, marginTop: 3, letterSpacing: 0.5 },
 
   pill: {
     flexDirection: 'row',
@@ -288,26 +348,50 @@ const styles = StyleSheet.create({
   pillDot: { width: 7, height: 7, borderRadius: 4 },
   pillText: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
 
-  gaugeWrap: { alignItems: 'center', marginVertical: 14 },
-
-  grid: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-
-  lampRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
-  lampLabel: { color: theme.colors.text, fontSize: 16, fontWeight: '700' },
-  lampState: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
-
-  divider: { height: 1, backgroundColor: theme.colors.border, marginVertical: 14 },
-  actionRow: { flexDirection: 'row', gap: 12 },
-  disclaimer: { color: theme.colors.textDim, fontSize: 11, marginTop: 12, lineHeight: 16 },
-
-  toggle: {
-    width: 76,
-    height: 38,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    paddingHorizontal: 4,
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 10, marginBottom: 16 },
+  metricsCol: { flex: 1, gap: 8 },
+  metric: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
   },
-  knob: { width: 28, height: 28, borderRadius: 14 },
-  toggleText: { position: 'absolute', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  metricBar: { width: 3, alignSelf: 'stretch', borderRadius: 2 },
+  metricLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
+  metricValue: { color: theme.colors.text, fontSize: 18, fontWeight: '800', fontFamily: theme.font.mono, marginTop: 1 },
+  metricUnit: { fontSize: 11, fontWeight: '700' },
+
+  ctrlRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  tile: {
+    flex: 1,
+    aspectRatio: 1.15,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  tileLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  tileDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4 },
+  resetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  resetText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+
 });

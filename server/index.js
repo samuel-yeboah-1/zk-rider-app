@@ -6,7 +6,7 @@ const Database = require('better-sqlite3');
 
 const PORT = process.env.PORT || 4000;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
-const SEED_PATH = path.join(__dirname, 'scooters.json');
+const FLEET_PATH = path.join(__dirname, 'fleet.json');
 const FLEET_PASSWORD = process.env.FLEET_PASSWORD || '';
 const AUTO_REGISTER = process.env.AUTO_REGISTER !== '0';
 
@@ -22,7 +22,9 @@ db.exec(`
     current_mileage INTEGER NOT NULL DEFAULT 0,
     lock_state      TEXT NOT NULL DEFAULT 'locked',
     available       INTEGER NOT NULL DEFAULT 1,
-    last_seen_at    TEXT
+    last_seen_at    TEXT,
+    vehicle_id      TEXT,
+    qr_url          TEXT
   );
   CREATE TABLE IF NOT EXISTS rides (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,10 +42,15 @@ db.exec(`
   );
 `);
 
-function seedScooters() {
+for (const [col, type] of [['vehicle_id', 'TEXT'], ['qr_url', 'TEXT']]) {
+  const cols = db.prepare('PRAGMA table_info(scooters)').all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE scooters ADD COLUMN ${col} ${type}`);
+}
+
+function seedScooters(seedPath) {
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
+    raw = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
   } catch {
     return;
   }
@@ -52,12 +59,13 @@ function seedScooters() {
 
   const exists = db.prepare('SELECT imei FROM scooters WHERE imei = ?');
   const insert = db.prepare(`
-    INSERT INTO scooters (imei, ble_password, password_mode, battery_pct, current_mileage, lock_state, available, last_seen_at)
-    VALUES (@imei, @blePassword, @passwordMode, @batteryPct, @currentMileage, 'locked', 1, @now)
+    INSERT INTO scooters (imei, ble_password, password_mode, battery_pct, current_mileage, lock_state, available, last_seen_at, vehicle_id, qr_url)
+    VALUES (@imei, @blePassword, @passwordMode, @batteryPct, @currentMileage, 'locked', 1, @now, @vehicleId, @qrUrl)
   `);
   const updateConfig = db.prepare(`
-    UPDATE scooters SET ble_password = @blePassword, password_mode = @passwordMode,
-      battery_pct = @batteryPct, current_mileage = @currentMileage, last_seen_at = @now
+    UPDATE scooters SET ble_password = COALESCE(@blePassword, ble_password), password_mode = @passwordMode,
+      battery_pct = @batteryPct, current_mileage = @currentMileage, last_seen_at = @now,
+      vehicle_id = @vehicleId, qr_url = @qrUrl
     WHERE imei = @imei
   `);
 
@@ -70,6 +78,8 @@ function seedScooters() {
         passwordMode: r.passwordMode === 'dynamic' ? 'dynamic' : 'static',
         batteryPct: Number.isFinite(r.batteryPct) ? r.batteryPct : 100,
         currentMileage: Number.isFinite(r.currentMileage) ? r.currentMileage : 0,
+        vehicleId: typeof r.vehicleId === 'string' ? r.vehicleId : null,
+        qrUrl: typeof r.qrUrl === 'string' ? r.qrUrl : null,
         now,
       };
       if (exists.get(row.imei)) updateConfig.run(row);
@@ -78,11 +88,12 @@ function seedScooters() {
   });
   tx(entries);
 }
-seedScooters();
+seedScooters(FLEET_PATH);
 
 function publicScooter(s) {
   return {
     imei: s.imei,
+    vehicleId: s.vehicle_id ?? null,
     lockState: s.lock_state,
     batteryPct: s.battery_pct,
     currentMileage: s.current_mileage,
@@ -92,6 +103,7 @@ function publicScooter(s) {
 }
 
 const getScooter = db.prepare('SELECT * FROM scooters WHERE imei = ?');
+const getByVehicle = db.prepare('SELECT * FROM scooters WHERE vehicle_id = ?');
 const getRide = db.prepare('SELECT * FROM rides WHERE id = ?');
 const insertAuto = db.prepare(`
   INSERT INTO scooters (imei, ble_password, password_mode, battery_pct, current_mileage, lock_state, available, last_seen_at)
@@ -122,15 +134,29 @@ app.get('/v1/scooters/:imei', (req, res) => {
   res.json(publicScooter(s));
 });
 
+app.get('/v1/vehicles/:vehicleId', (req, res) => {
+  const s = getByVehicle.get(req.params.vehicleId);
+  if (!s) return err(res, 404, 'vehicle_not_found');
+  res.json(publicScooter(s));
+});
+
 app.post('/v1/rides/start', (req, res) => {
   const { imei } = req.body || {};
   if (typeof imei !== 'string') return err(res, 400, 'invalid_body');
 
-  const s = ensureScooter(imei);
+  let s = ensureScooter(imei);
   if (!s) return err(res, 404, 'scooter_not_found');
-  if (!s.available || s.lock_state === 'unlocked') return err(res, 409, 'scooter_in_use');
 
-  if (!s.ble_password) {
+  // Single-operator app: reclaim any stale/abandoned open ride on this scooter
+  // instead of rejecting with scooter_in_use.
+  if (!s.available || s.lock_state === 'unlocked') {
+    db.prepare('UPDATE rides SET ended_at = ? WHERE imei = ? AND ended_at IS NULL').run(new Date().toISOString(), imei);
+    db.prepare("UPDATE scooters SET available = 1, lock_state = 'locked' WHERE imei = ?").run(imei);
+    s = getScooter.get(imei);
+  }
+
+  const blePassword = s.ble_password || FLEET_PASSWORD;
+  if (!blePassword) {
     return err(res, 409, s.password_mode === 'static' ? 'no_static_password_set' : 'no_active_password');
   }
 
@@ -142,7 +168,7 @@ app.post('/v1/rides/start', (req, res) => {
 
   res.status(201).json({
     rideId: `ride_${info.lastInsertRowid}`,
-    blePassword: s.ble_password,
+    blePassword,
     passwordMode: s.password_mode,
   });
 });

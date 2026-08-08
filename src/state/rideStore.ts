@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { ScooterConnection } from '../ble/bleManager';
+import type { IScooterConnection } from '../ble/connection';
 import type { PasswordMode } from '../api/types';
 
 interface RideState {
@@ -8,7 +8,7 @@ interface RideState {
   imei: string | null;
   passwordMode: PasswordMode | null;
   blePassword: string | null;
-  connection: ScooterConnection | null;
+  connection: IScooterConnection | null;
   isConnected: boolean;
 
   startRide: (args: {
@@ -17,7 +17,7 @@ interface RideState {
     blePassword: string;
     passwordMode: PasswordMode;
   }) => void;
-  setConnection: (conn: ScooterConnection | null) => void;
+  setConnection: (conn: IScooterConnection | null) => void;
   getPassword: () => string;
   clear: () => void;
 }

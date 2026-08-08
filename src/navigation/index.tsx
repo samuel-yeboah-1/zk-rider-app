@@ -43,12 +43,8 @@ export function RootNavigator() {
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="Unlock" component={UnlockScreen} options={{ title: 'Unlock' }} />
-            <Stack.Screen
-              name="Ride"
-              component={RideScreen}
-              options={{ title: 'Ride', headerBackVisible: false }}
-            />
+            <Stack.Screen name="Unlock" component={UnlockScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Ride" component={RideScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

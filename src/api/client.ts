@@ -61,6 +61,10 @@ export const api = {
     return request(`/v1/scooters/${encodeURIComponent(imei)}`);
   },
 
+  resolveVehicle(vehicleId: string): Promise<Scooter> {
+    return request(`/v1/vehicles/${encodeURIComponent(vehicleId)}`);
+  },
+
   startRide(imei: string): Promise<StartRideResponse> {
     return request('/v1/rides/start', { method: 'POST', body: { imei }, sensitive: true });
   },

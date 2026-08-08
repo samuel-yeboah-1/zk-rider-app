@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { api } from '../api/client';
 import { ApiError } from '../api/types';
 import { getBleManager, ScooterConnection, waitForPoweredOn } from '../ble/bleManager';
+import { IScooterConnection } from '../ble/connection';
 import { ensureBlePermissions } from '../ble/permissions';
 import { Banner, Button, ScreenBackground } from '../components/ui';
+import { SlideAction } from '../components/SlideAction';
 import { rideActions } from '../rideService';
 import { useRideStore } from '../state/rideStore';
 import { RootStackParamList } from '../navigation/types';
@@ -21,10 +24,10 @@ const STEPS: Array<{ label: string; hint: string }> = [
   { label: 'Authorizing ride', hint: 'Requesting access from the fleet' },
   { label: 'Checking Bluetooth', hint: 'Waking the radio & permissions' },
   { label: 'Connecting to scooter', hint: 'Locking on to the BLE signal' },
-  { label: 'Unlocking', hint: 'Sending the release command' },
 ];
 
 export function UnlockScreen({ route, navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { imei } = route.params;
   const startRide = useRideStore((s) => s.startRide);
   const setConnection = useRideStore((s) => s.setConnection);
@@ -32,18 +35,40 @@ export function UnlockScreen({ route, navigation }: Props) {
 
   const [steps, setSteps] = useState<Step[]>(STEPS.map((s) => ({ ...s, state: 'pending' })));
   const [error, setError] = useState<string | null>(null);
-  const connRef = useRef<ScooterConnection | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const connRef = useRef<IScooterConnection | null>(null);
   const cancelled = useRef(false);
+  const started = useRef(false);
 
   function setStep(i: number, state: StepState) {
     setSteps((prev) => prev.map((s, idx) => (idx === i ? { ...s, state } : s)));
   }
 
+  async function releaseRide() {
+    const rid = useRideStore.getState().rideId;
+    const conn = connRef.current;
+    connRef.current = null;
+    try {
+      await conn?.disconnect();
+    } catch {
+      /* already gone */
+    }
+    if (rid) {
+      try {
+        await api.endRide(rid);
+      } catch {
+        /* best effort */
+      }
+    }
+    clear();
+  }
+
   async function run() {
     setError(null);
+    setConnected(false);
     cancelled.current = false;
     setSteps(STEPS.map((s) => ({ ...s, state: 'pending' })));
-    const manager = getBleManager();
 
     try {
       setStep(0, 'active');
@@ -55,12 +80,12 @@ export function UnlockScreen({ route, navigation }: Props) {
       setStep(1, 'active');
       const perm = await ensureBlePermissions();
       if (!perm.granted) throw new Error(`Bluetooth permission denied: ${perm.missing.join(', ')}`);
-      await waitForPoweredOn(manager);
+      await waitForPoweredOn(getBleManager());
       setStep(1, 'done');
       if (cancelled.current) return;
 
       setStep(2, 'active');
-      const conn = await ScooterConnection.connect(manager, imei, {
+      const conn: IScooterConnection = await ScooterConnection.connect(getBleManager(), imei, {
         onDisconnect: () => {
           if (!cancelled.current) setError('Scooter disconnected. Move closer and retry.');
         },
@@ -70,26 +95,45 @@ export function UnlockScreen({ route, navigation }: Props) {
       setStep(2, 'done');
       if (cancelled.current) return;
 
-      setStep(3, 'active');
-      const unlocked = await rideActions.unlock();
-      if (!unlocked) throw new Error('Scooter rejected the unlock (ack result not "unlocked").');
-      setStep(3, 'done');
-
-      navigation.replace('Ride');
+      setConnected(true);
     } catch (e) {
       const msg = e instanceof ApiError ? apiErrorMessage(e) : (e as Error)?.message ?? 'Unknown error';
       setError(msg);
       setSteps((prev) => prev.map((s) => (s.state === 'active' ? { ...s, state: 'error' } : s)));
-      await connRef.current?.disconnect();
-      connRef.current = null;
-      clear();
+      await releaseRide();
     }
+  }
+
+  async function startBike() {
+    setStarting(true);
+    setError(null);
+    try {
+      const unlocked = await rideActions.unlock();
+      if (!unlocked) throw new Error('Scooter rejected the unlock (ack result not "unlocked").');
+      started.current = true;
+      navigation.replace('Ride');
+    } catch (e) {
+      setError((e as Error)?.message ?? 'Could not start the bike.');
+      setStarting(false);
+    }
+  }
+
+  function cancel() {
+    navigation.goBack();
   }
 
   useEffect(() => {
     run();
     return () => {
       cancelled.current = true;
+      if (!started.current) {
+        const rid = useRideStore.getState().rideId;
+        const conn = connRef.current;
+        connRef.current = null;
+        conn?.disconnect().catch(() => {});
+        if (rid) api.endRide(rid).catch(() => {});
+        clear();
+      }
     };
   }, []);
 
@@ -99,12 +143,21 @@ export function UnlockScreen({ route, navigation }: Props) {
 
   return (
     <ScreenBackground>
-      <View style={styles.content}>
-        <Text style={styles.kicker}>{hasError ? 'LINK INTERRUPTED' : 'ESTABLISHING LINK'}</Text>
-        <Text style={styles.h1}>{hasError ? 'Something stalled' : 'Waking your ride'}</Text>
+      <View style={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
+        <Text style={styles.kicker}>
+          {hasError ? 'LINK INTERRUPTED' : connected ? 'READY TO RIDE' : 'ESTABLISHING LINK'}
+        </Text>
+        <Text style={styles.h1}>
+          {hasError ? 'Something stalled' : connected ? 'Bike connected' : 'Connecting…'}
+        </Text>
         <Text style={styles.imei}>{imei}</Text>
 
-        <Pulse active={activeIndex >= 0} error={hasError} done={doneCount === STEPS.length} progress={doneCount / STEPS.length} />
+        <Pulse
+          active={activeIndex >= 0}
+          error={hasError}
+          done={connected && !hasError}
+          progress={connected ? 1 : doneCount / STEPS.length}
+        />
 
         <View style={styles.steps}>
           {steps.map((s, i) => (
@@ -112,11 +165,39 @@ export function UnlockScreen({ route, navigation }: Props) {
           ))}
         </View>
 
+        <View style={{ flex: 1 }} />
+
+        {connected && !error && (
+          <View style={styles.startWrap}>
+            <Text style={styles.readyHint}>Connected. Slide to release the lock and begin your ride.</Text>
+            <SlideAction
+              label="Slide to start"
+              busyLabel="Starting…"
+              icon="power"
+              color={theme.colors.primary}
+              onComplete={startBike}
+              busy={starting}
+            />
+            <Button label="Cancel" variant="secondary" onPress={cancel} />
+          </View>
+        )}
+
         {error && (
           <View style={styles.errorBox}>
             <Banner tone="error" text={error} />
             <View style={{ gap: 10, marginTop: 6 }}>
-              <Button label="Retry" onPress={run} />
+              {connected ? (
+                <SlideAction
+                  label="Slide to start"
+                  busyLabel="Starting…"
+                  icon="power"
+                  color={theme.colors.primary}
+                  onComplete={startBike}
+                  busy={starting}
+                />
+              ) : (
+                <Button label="Retry" onPress={run} />
+              )}
               <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
             </View>
           </View>
@@ -261,4 +342,6 @@ const styles = StyleSheet.create({
   stepHint: { color: theme.colors.textMuted, fontSize: 13, marginTop: 3 },
 
   errorBox: { marginTop: 8 },
+  startWrap: { marginTop: 12, gap: 12 },
+  readyHint: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
 });

@@ -42,7 +42,7 @@ export function LoginScreen() {
         <View style={{ height: 16 }} />
         <Button label="Sign in" onPress={onLogin} loading={loading} disabled={!email.trim()} />
         <Text style={styles.note}>
-          Auth is a stub (§5.1). Any email works; the mock backend accepts the dev token.
+          Auth is a stub (§5.1). Any email works; the backend accepts the dev token.
         </Text>
       </View>
     </KeyboardAvoidingView>

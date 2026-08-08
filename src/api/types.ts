@@ -2,6 +2,7 @@ export type PasswordMode = 'dynamic' | 'static';
 
 export interface Scooter {
   imei: string;
+  vehicleId?: string | null;
   lockState: 'locked' | 'unlocked';
   batteryPct: number;
   currentMileage: number;
@@ -28,6 +29,7 @@ export interface CommandAuditBody {
 
 export type ApiErrorCode =
   | 'scooter_not_found'
+  | 'vehicle_not_found'
   | 'scooter_in_use'
   | 'no_active_password'
   | 'no_static_password_set'

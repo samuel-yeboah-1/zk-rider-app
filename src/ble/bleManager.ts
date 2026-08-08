@@ -99,6 +99,19 @@ export class ScooterConnection {
     return ackPromise;
   }
 
+  async sendRaw(frame: string): Promise<void> {
+    log.info(`TX ${redactFrame(frame)}`);
+    const chunks = chunk(frame);
+    for (const part of chunks) {
+      const base64 = Buffer.from(part, 'utf8').toString('base64');
+      await this.device.writeCharacteristicWithResponseForService(
+        SERVICE_UUID,
+        CHARACTERISTIC_UUID,
+        base64
+      );
+    }
+  }
+
   private waitForAck(expect: CommandName, timeoutMs: number): Promise<ParsedAck> {
     return new Promise<ParsedAck>((resolve, reject) => {
       const timer = setTimeout(() => {

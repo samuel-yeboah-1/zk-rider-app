@@ -13,9 +13,6 @@ import { theme } from '../theme';
 export function ScreenBackground({ children }: { children: React.ReactNode }) {
   return (
     <View style={styles.bg}>
-      <View pointerEvents="none" style={[styles.blob, styles.blobCyan]} />
-      <View pointerEvents="none" style={[styles.blob, styles.blobViolet]} />
-      <View pointerEvents="none" style={[styles.blob, styles.blobMagenta]} />
       <View style={styles.bgContent}>{children}</View>
     </View>
   );
@@ -55,7 +52,6 @@ export function Button({
           opacity: isDisabled ? 0.4 : pressed ? 0.85 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
-        variant === 'primary' && !isDisabled ? theme.glow(theme.colors.primary, 18, 0.7) : null,
         style,
       ]}
     >
@@ -125,10 +121,6 @@ export function Banner({ text, tone = 'info' }: { text: string; tone?: 'info' | 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: theme.colors.bgDeep, overflow: 'hidden' },
   bgContent: { flex: 1 },
-  blob: { position: 'absolute', width: 380, height: 380, borderRadius: 190, opacity: 0.18 },
-  blobCyan: { top: -140, right: -120, backgroundColor: theme.colors.cyan, ...theme.glow(theme.colors.cyan, 120, 0.5) },
-  blobViolet: { top: 220, left: -160, backgroundColor: theme.colors.accent, ...theme.glow(theme.colors.accent, 120, 0.5) },
-  blobMagenta: { bottom: -160, right: -80, backgroundColor: theme.colors.magenta, opacity: 0.12, ...theme.glow(theme.colors.magenta, 120, 0.4) },
 
   button: {
     paddingVertical: 15,

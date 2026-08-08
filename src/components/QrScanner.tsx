@@ -25,7 +25,7 @@ export function QrScanner({
   function handleBarcode({ data }: { data: string }) {
     if (handled) return;
     setHandled(true);
-    onScanned(extractImei(data));
+    onScanned(data);
   }
 
   return (
