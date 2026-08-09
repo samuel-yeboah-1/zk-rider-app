@@ -8,8 +8,9 @@ import { ApiError } from '../api/types';
 import { getBleManager, ScooterConnection, waitForPoweredOn } from '../ble/bleManager';
 import { IScooterConnection } from '../ble/connection';
 import { ensureBlePermissions } from '../ble/permissions';
-import { Banner, Button, ScreenBackground } from '../components/ui';
+import { Button, ScreenBackground } from '../components/ui';
 import { SlideAction } from '../components/SlideAction';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { rideActions } from '../rideService';
 import { useRideStore } from '../state/rideStore';
 import { RootStackParamList } from '../navigation/types';
@@ -99,7 +100,7 @@ export function UnlockScreen({ route, navigation }: Props) {
     } catch (e) {
       const msg = e instanceof ApiError ? apiErrorMessage(e) : (e as Error)?.message ?? 'Unknown error';
       setError(msg);
-      setSteps((prev) => prev.map((s) => (s.state === 'active' ? { ...s, state: 'error' } : s)));
+      setSteps((prev) => prev.map((s) => (s.state === 'active' ? { ...s, state: 'error', hint: msg } : s)));
       await releaseRide();
     }
   }
@@ -137,39 +138,38 @@ export function UnlockScreen({ route, navigation }: Props) {
     };
   }, []);
 
-  const activeIndex = steps.findIndex((s) => s.state === 'active');
-  const doneCount = steps.filter((s) => s.state === 'done').length;
   const hasError = steps.some((s) => s.state === 'error');
 
   return (
     <ScreenBackground>
       <View style={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.kicker}>
-          {hasError ? 'LINK INTERRUPTED' : connected ? 'READY TO RIDE' : 'ESTABLISHING LINK'}
-        </Text>
-        <Text style={styles.h1}>
-          {hasError ? 'Something stalled' : connected ? 'Bike connected' : 'Connecting…'}
-        </Text>
-        <Text style={styles.imei}>{imei}</Text>
+        <View style={styles.middle}>
+          <View style={styles.head}>
+            <Text style={styles.kicker}>
+              {hasError ? 'LINK INTERRUPTED' : connected ? 'READY TO RIDE' : 'ESTABLISHING LINK'}
+            </Text>
+            <Text style={styles.h1}>
+              {hasError ? 'Something stalled' : connected ? 'Bike connected' : 'Connecting…'}
+            </Text>
+            <Text style={styles.imei}>{imei}</Text>
+          </View>
 
-        <Pulse
-          active={activeIndex >= 0}
-          error={hasError}
-          done={connected && !hasError}
-          progress={connected ? 1 : doneCount / STEPS.length}
-        />
+          <StatusOrb state={hasError ? 'error' : connected ? 'done' : 'connecting'} />
 
-        <View style={styles.steps}>
-          {steps.map((s, i) => (
-            <StepRow key={i} step={s} isLast={i === steps.length - 1} />
-          ))}
+          <View style={styles.steps}>
+            {steps.map((s, i) => (
+              <StepRow key={i} step={s} isLast={i === steps.length - 1} />
+            ))}
+          </View>
         </View>
 
-        <View style={{ flex: 1 }} />
-
-        {connected && !error && (
+        {connected && (
           <View style={styles.startWrap}>
-            <Text style={styles.readyHint}>Connected. Slide to release the lock and begin your ride.</Text>
+            {error ? (
+              <Text style={styles.startError}>{error}</Text>
+            ) : (
+              <Text style={styles.readyHint}>Connected. Slide to release the lock and begin your ride.</Text>
+            )}
             <SlideAction
               label="Slide to start"
               busyLabel="Starting…"
@@ -182,24 +182,10 @@ export function UnlockScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {error && (
-          <View style={styles.errorBox}>
-            <Banner tone="error" text={error} />
-            <View style={{ gap: 10, marginTop: 6 }}>
-              {connected ? (
-                <SlideAction
-                  label="Slide to start"
-                  busyLabel="Starting…"
-                  icon="power"
-                  color={theme.colors.primary}
-                  onComplete={startBike}
-                  busy={starting}
-                />
-              ) : (
-                <Button label="Retry" onPress={run} />
-              )}
-              <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
-            </View>
+        {error && !connected && (
+          <View style={styles.actions}>
+            <Button label="Retry" variant="danger" onPress={run} />
+            <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
           </View>
         )}
       </View>
@@ -207,43 +193,40 @@ export function UnlockScreen({ route, navigation }: Props) {
   );
 }
 
-function Pulse({ active, error, done, progress }: { active: boolean; error: boolean; done: boolean; progress: number }) {
+function StatusOrb({ state }: { state: 'connecting' | 'error' | 'done' }) {
   const pulse = useRef(new Animated.Value(0)).current;
-  const color = error ? theme.colors.danger : done ? theme.colors.green : theme.colors.primary;
+  const color = state === 'error' ? theme.colors.danger : state === 'done' ? theme.colors.green : theme.colors.primary;
+  const icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] =
+    state === 'done' ? 'check-bold' : state === 'error' ? 'alert' : 'bluetooth';
 
   useEffect(() => {
-    if (!active || error || done) {
-      pulse.stopAnimation();
+    if (state !== 'connecting') {
       pulse.setValue(0);
       return;
     }
     const a = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ])
+      Animated.timing(pulse, { toValue: 1, duration: 1500, easing: Easing.out(Easing.ease), useNativeDriver: true })
     );
     a.start();
     return () => a.stop();
-  }, [active, error, done, pulse]);
+  }, [state, pulse]);
 
   return (
     <View style={styles.orbWrap}>
-      {[0, 1].map((i) => (
+      {state === 'connecting' && (
         <Animated.View
-          key={i}
           style={[
-            styles.orbRing,
-            { borderColor: color },
+            styles.orbPulse,
             {
-              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
-              transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5 + i * 0.2, 1.15 + i * 0.15] }) }],
+              borderColor: color,
+              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+              transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.25] }) }],
             },
           ]}
         />
-      ))}
-      <View style={[styles.orbCore, { backgroundColor: color }, theme.glow(color, 26, 0.9)]}>
-        <Text style={styles.orbPct}>{done ? '✓' : error ? '!' : `${Math.round(progress * 100)}%`}</Text>
+      )}
+      <View style={[styles.orbCircle, { borderColor: color }]}>
+        <MaterialCommunityIcons name={icon} size={52} color={color} />
       </View>
     </View>
   );
@@ -295,8 +278,8 @@ function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
       </View>
       <View style={styles.stepText}>
         <Text style={[styles.stepLabel, { color: step.state === 'pending' ? theme.colors.textDim : theme.colors.text }]}>{step.label}</Text>
-        <Text style={styles.stepHint}>
-          {step.state === 'active' ? step.hint + '…' : step.state === 'done' ? 'Done' : step.state === 'error' ? 'Failed here' : step.hint}
+        <Text style={[styles.stepHint, step.state === 'error' && { color: theme.colors.danger }]}>
+          {step.state === 'active' ? step.hint + '…' : step.state === 'done' ? 'Done' : step.hint}
         </Text>
       </View>
     </View>
@@ -321,17 +304,19 @@ function apiErrorMessage(e: ApiError): string {
 }
 
 const styles = StyleSheet.create({
-  content: { flex: 1, padding: 24, paddingTop: 20 },
-  kicker: { color: theme.colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 3 },
-  h1: { fontSize: 30, fontWeight: '900', color: theme.colors.text, marginTop: 6, letterSpacing: -0.5 },
-  imei: { color: theme.colors.textMuted, fontSize: 15, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 0.5 },
+  content: { flex: 1, paddingHorizontal: 24 },
+  head: { alignItems: 'center' },
+  kicker: { color: theme.colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 3, textAlign: 'center' },
+  h1: { fontSize: 28, fontWeight: '900', color: theme.colors.text, marginTop: 6, letterSpacing: -0.5, textAlign: 'center' },
+  imei: { color: theme.colors.textMuted, fontSize: 15, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 0.5, textAlign: 'center' },
 
-  orbWrap: { alignItems: 'center', justifyContent: 'center', height: 150, marginVertical: 18 },
-  orbRing: { position: 'absolute', width: 120, height: 120, borderRadius: 60, borderWidth: 1.5 },
-  orbCore: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center' },
-  orbPct: { color: theme.colors.primaryText, fontSize: 22, fontWeight: '900', fontFamily: theme.font.mono },
+  middle: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 28 },
 
-  steps: { marginTop: 8 },
+  orbWrap: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
+  orbPulse: { position: 'absolute', width: 132, height: 132, borderRadius: 66, borderWidth: 1.5 },
+  orbCircle: { width: 108, height: 108, borderRadius: 54, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface },
+
+  steps: { alignSelf: 'center', width: '100%', maxWidth: 320 },
   stepRow: { flexDirection: 'row', gap: 14 },
   stepRail: { alignItems: 'center', width: 34 },
   stepNode: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
@@ -341,7 +326,8 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 17, fontWeight: '700' },
   stepHint: { color: theme.colors.textMuted, fontSize: 13, marginTop: 3 },
 
-  errorBox: { marginTop: 8 },
+  actions: { gap: 10, marginTop: 8 },
   startWrap: { marginTop: 12, gap: 12 },
   readyHint: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
+  startError: { color: theme.colors.danger, fontSize: 14, fontWeight: '700', lineHeight: 20 },
 });

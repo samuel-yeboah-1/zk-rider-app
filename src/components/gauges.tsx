@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 import { theme } from '../theme';
 
@@ -11,6 +11,43 @@ export function batteryColor(pct: number): string {
   if (pct <= 15) return theme.colors.danger;
   if (pct <= 40) return theme.colors.warning;
   return theme.colors.green;
+}
+
+export function BatteryGauge({ value, size = 150, label = 'Battery' }: { value: number | null; size?: number; label?: string }) {
+  const pct = value == null ? 0 : clamp(value / 100, 0, 1);
+  const color = value == null ? theme.colors.textDim : batteryColor(value);
+  const bodyW = Math.round(size * 0.66);
+  const bodyH = size;
+  const nubW = Math.round(bodyW * 0.42);
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <View style={{ width: nubW, height: Math.round(size * 0.05), borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: color, marginBottom: 2 }} />
+      <View
+        style={{
+          width: bodyW,
+          height: bodyH,
+          borderRadius: 16,
+          borderWidth: 2.5,
+          borderColor: color,
+          overflow: 'hidden',
+          justifyContent: 'flex-end',
+          backgroundColor: theme.colors.surface,
+        }}
+      >
+        <View style={{ height: `${pct * 100}%`, backgroundColor: color, opacity: 0.28 }} />
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: theme.colors.text, fontSize: Math.round(size * 0.24), fontWeight: '800', fontFamily: theme.font.mono, letterSpacing: -1 }}>
+              {value == null ? '––' : Math.round(value)}
+              <Text style={{ fontSize: Math.round(size * 0.12), color }}>%</Text>
+            </Text>
+            <Text style={{ color, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginTop: 2 }}>{label.toUpperCase()}</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 export function RadialGauge({
@@ -99,22 +136,31 @@ export function StatTile({
   value,
   unit,
   color = theme.colors.primary,
+  loading = false,
   style,
 }: {
   label: string;
   value: string;
   unit?: string;
   color?: string;
+  loading?: boolean;
   style?: ViewStyle;
 }) {
   return (
     <View style={[styles.tile, style]}>
       <View style={[styles.tileBar, { backgroundColor: color }, theme.glow(color, 8, 0.8)]} />
       <Text style={styles.tileLabel}>{label}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-        <Text style={styles.tileValue}>{value}</Text>
-        {unit ? <Text style={[styles.tileUnit, { color }]}> {unit}</Text> : null}
-      </View>
+      {loading ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+          <ActivityIndicator size="small" color={color} />
+          <Text style={styles.tilePending}>after unlock</Text>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+          <Text style={styles.tileValue}>{value}</Text>
+          {unit ? <Text style={[styles.tileUnit, { color }]}> {unit}</Text> : null}
+        </View>
+      )}
     </View>
   );
 }
@@ -139,4 +185,5 @@ const styles = StyleSheet.create({
   tileLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' },
   tileValue: { color: theme.colors.text, fontSize: 26, fontWeight: '800', fontFamily: theme.font.mono, marginTop: 6, letterSpacing: -0.5 },
   tileUnit: { fontSize: 13, fontWeight: '700', marginBottom: 5 },
+  tilePending: { color: theme.colors.textDim, fontSize: 12, fontWeight: '600', marginTop: 1 },
 });

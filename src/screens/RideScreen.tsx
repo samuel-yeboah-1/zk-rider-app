@@ -9,7 +9,7 @@ import { AckTimeoutError, rideActions } from '../rideService';
 import { ScooterInfo } from '../ble/protocol';
 import { Banner, ScreenBackground, SectionTitle } from '../components/ui';
 import { SlideAction } from '../components/SlideAction';
-import { RadialGauge, batteryColor } from '../components/gauges';
+import { BatteryGauge } from '../components/gauges';
 import { log } from '../log';
 import { useRideStore } from '../state/rideStore';
 import { RootStackParamList } from '../navigation/types';
@@ -132,8 +132,6 @@ export function RideScreen({ navigation }: Props) {
   }
 
   const battery = info?.batteryPct ?? null;
-  const battColor = battery == null ? theme.colors.primary : batteryColor(battery);
-  const loadingInfo = info == null && isConnected;
   const disabled = !isConnected || !!busy;
   const ecuLocked = info?.locked ?? false;
 
@@ -153,7 +151,7 @@ export function RideScreen({ navigation }: Props) {
         {statusError && isConnected && <Banner tone="error" text={statusError} />}
 
         <View style={styles.hero}>
-          <RadialGauge value={battery} label="Battery" unit="%" color={battColor} loading={loadingInfo} size={148} />
+          <BatteryGauge value={battery} label="Battery" size={150} />
           <View style={styles.metricsCol}>
             <Metric label="Speed" value={info ? `${info.speedKmh}` : '––'} unit="km/h" color={theme.colors.sky} />
             <Metric label="This ride" value={info ? `${info.currentMileageKm}` : '––'} unit="km" color={theme.colors.blue} />
@@ -327,7 +325,7 @@ function formatDuration(seconds: number): string {
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 18 },
   scroll: { flex: 1 },
-  content: { paddingBottom: 12 },
+  content: { flexGrow: 1, justifyContent: 'center', paddingBottom: 12 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
   muted: { color: theme.colors.textMuted, fontSize: 16 },
 

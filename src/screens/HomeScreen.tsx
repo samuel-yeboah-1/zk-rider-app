@@ -8,7 +8,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api } from '../api/client';
 import { ApiError } from '../api/types';
 import { Banner, Button, Card, ScreenBackground, SectionTitle } from '../components/ui';
-import { StatTile, batteryColor } from '../components/gauges';
+import { StatTile } from '../components/gauges';
 import { QrScanner } from '../components/QrScanner';
 import { RootStackParamList } from '../navigation/types';
 import { theme } from '../theme';
@@ -122,14 +122,13 @@ export function HomeScreen({ navigation }: Props) {
         <View style={styles.brand}>
           <Image source={require('../../assets/aldin-logo.png')} style={styles.logo} resizeMode="contain" />
         </View>
-        <Text style={styles.h1}>Let's get you rolling</Text>
         <Text style={styles.p}>Scan the scooter's QR code, or key in its 15-digit IMEI to unlock your ride.</Text>
 
         <Pressable
           onPress={() => setScanning(true)}
           style={({ pressed }) => [styles.scanBtn, { opacity: pressed ? 0.9 : 1 }]}
         >
-          <QrGlyph size={44} color={theme.colors.primary} />
+          <QrGlyph size={34} color={theme.colors.primary} />
           <Text style={styles.scanText}>SCAN QR CODE</Text>
         </Pressable>
 
@@ -150,10 +149,10 @@ export function HomeScreen({ navigation }: Props) {
             returnKeyType="search"
             onSubmitEditing={lookupVehicle}
           />
-          <Button label="Go" onPress={lookupVehicle} disabled={!vehicleInput.trim()} style={{ paddingHorizontal: 20 }} />
+          <Button label="Go" onPress={lookupVehicle} loading={resolving} disabled={!vehicleInput.trim()} style={{ paddingHorizontal: 20 }} />
         </View>
 
-        <View style={[styles.inputRow, { marginTop: 10 }]}>
+        <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             value={imeiInput}
@@ -165,7 +164,7 @@ export function HomeScreen({ navigation }: Props) {
             maxLength={IMEI_LENGTH}
             onSubmitEditing={() => lookup(imeiInput)}
           />
-          <Button label="Find" onPress={() => lookup(imeiInput)} disabled={!isValidImei} style={{ paddingHorizontal: 22 }} />
+          <Button label="Find" onPress={() => lookup(imeiInput)} loading={scooterQuery.isFetching && !resolving} disabled={!isValidImei} style={{ paddingHorizontal: 22 }} />
         </View>
 
         {imeiInput.length > 0 && !isValidImei && !inputError && (
@@ -188,22 +187,23 @@ export function HomeScreen({ navigation }: Props) {
         )}
 
         {scooter && !scooterQuery.isFetching && (
-          <Card style={{ marginTop: 18 }} glowColor={canUnlock ? theme.colors.green : theme.colors.warning}>
-            <SectionTitle color={canUnlock ? theme.colors.green : theme.colors.warning}>Unit acquired</SectionTitle>
-            {scooter.vehicleId ? <Text style={styles.cardVehicle}>Bike #{scooter.vehicleId}</Text> : null}
-            <Text style={styles.cardImei}>{scooter.imei}</Text>
+          <>
+            <Card style={{ padding: 14 }} glowColor={canUnlock ? theme.colors.green : theme.colors.warning}>
+              <SectionTitle color={canUnlock ? theme.colors.green : theme.colors.warning}>Unit acquired</SectionTitle>
+              {scooter.vehicleId ? <Text style={styles.cardVehicle}>Bike #{scooter.vehicleId}</Text> : null}
+              <Text style={styles.cardImei}>{scooter.imei}</Text>
 
-            <View style={styles.cardGrid}>
-              <StatTile label="Battery" value={`${scooter.batteryPct}`} unit="%" color={batteryColor(scooter.batteryPct)} />
-              <StatTile label="Odometer" value={`${scooter.currentMileage}`} unit="km" color={theme.colors.accent} />
-            </View>
+              <View style={styles.cardGrid}>
+                <StatTile label="Battery" value="" unit="%" color={theme.colors.primary} loading />
+                <StatTile label="Odometer" value="" unit="km" color={theme.colors.accent} loading />
+              </View>
 
-            <View style={styles.statusRow}>
-              <StateChip on={scooter.available} labelOn="AVAILABLE" labelOff="UNAVAILABLE" />
-              <StateChip on={scooter.lockState === 'locked'} labelOn="LOCKED" labelOff="UNLOCKED" color={theme.colors.cyan} />
-            </View>
+              <View style={styles.statusRow}>
+                <StateChip on={scooter.available} labelOn="AVAILABLE" labelOff="UNAVAILABLE" />
+                <StateChip on={scooter.lockState === 'locked'} labelOn="LOCKED" labelOff="UNLOCKED" color={theme.colors.cyan} />
+              </View>
+            </Card>
 
-            <View style={{ height: 14 }} />
             {canUnlock ? (
               <Button label="Unlock & ride" onPress={() => navigation.navigate('Unlock', { imei: scooter.imei })} />
             ) : (
@@ -212,7 +212,7 @@ export function HomeScreen({ navigation }: Props) {
                 text={!scooter.available ? 'This scooter is not available right now.' : 'This scooter is already unlocked / in use.'}
               />
             )}
-          </Card>
+          </>
         )}
 
         <QrScanner visible={scanning} onClose={() => setScanning(false)} onScanned={onScanned} />
@@ -320,25 +320,25 @@ function StateChip({ on, labelOn, labelOff, color = theme.colors.green }: { on: 
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 22, flexGrow: 1 },
-  brand: { alignItems: 'center', marginBottom: 14 },
-  logo: { width: 216, height: 100 },
-  h1: { fontSize: 30, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5 },
-  p: { color: theme.colors.textMuted, fontSize: 15, marginTop: 8, marginBottom: 24, lineHeight: 21 },
+  content: { paddingHorizontal: 20, paddingVertical: 16, flexGrow: 1, justifyContent: 'center', alignItems: 'stretch', gap: 13 },
+  brand: { alignItems: 'center' },
+  logo: { width: 168, height: 74 },
+  h1: { fontSize: 22, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5, textAlign: 'center' },
+  p: { color: theme.colors.text, fontSize: 15, lineHeight: 21, textAlign: 'center' },
 
   scanBtn: {
     borderWidth: 1.5,
     borderColor: theme.colors.primary,
     borderRadius: theme.radius.lg,
-    paddingVertical: 26,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(34,224,255,0.06)',
-    gap: 8,
+    gap: 6,
   },
-  scanText: { color: theme.colors.primary, fontSize: 15, fontWeight: '800', letterSpacing: 2 },
+  scanText: { color: theme.colors.primary, fontSize: 13, fontWeight: '800', letterSpacing: 2 },
 
-  orRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
+  orRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   orLine: { flex: 1, height: 1, backgroundColor: theme.colors.border },
   orText: { color: theme.colors.textDim, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
@@ -349,14 +349,14 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.borderBright,
     borderWidth: 1,
     borderRadius: theme.radius.md,
-    paddingVertical: 15,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     color: theme.colors.text,
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: theme.font.mono,
     letterSpacing: 1,
   },
-  counter: { color: theme.colors.textMuted, fontSize: 12, marginTop: 8, fontFamily: theme.font.mono, letterSpacing: 1 },
+  counter: { color: theme.colors.textMuted, fontSize: 12, marginTop: 6, fontFamily: theme.font.mono, letterSpacing: 1 },
 
   radarWrap: { alignItems: 'center', marginTop: 34, marginBottom: 10 },
   radar: { width: 160, height: 160, alignItems: 'center', justifyContent: 'center' },
@@ -380,9 +380,9 @@ const styles = StyleSheet.create({
   radarText: { color: theme.colors.primary, fontSize: 13, fontWeight: '700', letterSpacing: 1, marginTop: 20 },
   radarImei: { color: theme.colors.textDim, fontSize: 13, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 1 },
 
-  cardVehicle: { color: theme.colors.text, fontSize: 22, fontWeight: '900', letterSpacing: 0.3, marginBottom: 2 },
-  cardImei: { color: theme.colors.textMuted, fontSize: 14, fontFamily: theme.font.mono, letterSpacing: 0.5, marginBottom: 14 },
-  cardGrid: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  cardVehicle: { color: theme.colors.text, fontSize: 18, fontWeight: '900', letterSpacing: 0.3, marginBottom: 2 },
+  cardImei: { color: theme.colors.textMuted, fontSize: 12, fontFamily: theme.font.mono, letterSpacing: 0.5, marginBottom: 10 },
+  cardGrid: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   statusRow: { flexDirection: 'row', gap: 10 },
   chip: {
     flexDirection: 'row',
