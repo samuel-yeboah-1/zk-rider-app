@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { api } from '../api/client';
+import { api, warmUp } from '../api/client';
 import { ApiError } from '../api/types';
 import { Banner, Button, Card, ScreenBackground, SectionTitle } from '../components/ui';
 import { StatTile } from '../components/gauges';
@@ -105,6 +105,8 @@ export function HomeScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      // Nudge the backend awake as the rider lands here, before they tap Find.
+      warmUp();
       if (imei) scooterQuery.refetch();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imei])
@@ -225,7 +227,15 @@ function RadarLoader({ imei }: { imei: string }) {
   const rings = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
   const sweep = useRef(new Animated.Value(0)).current;
   const [phase, setPhase] = useState(0);
-  const PHASES = ['Pinging fleet network', 'Locating unit by IMEI', 'Reading telemetry'];
+  const [slow, setSlow] = useState(false);
+  const PHASES = ['Waking the fleet network', 'Locating unit by IMEI', 'Reading telemetry'];
+
+  useEffect(() => {
+    // The backend can be spun down and take a moment to wake on the first
+    // lookup — tell the rider so a slow connect doesn't read as a freeze.
+    const slowTimer = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(slowTimer);
+  }, []);
 
   useEffect(() => {
     const animations = rings.map((r, i) =>
@@ -272,6 +282,7 @@ function RadarLoader({ imei }: { imei: string }) {
       </View>
       <Text style={styles.radarText}>{PHASES[phase]}…</Text>
       <Text style={styles.radarImei}>{imei}</Text>
+      {slow && <Text style={styles.radarHint}>First connect can take a moment — waking the server.</Text>}
     </View>
   );
 }
@@ -379,6 +390,7 @@ const styles = StyleSheet.create({
   radarCore: { width: 14, height: 14, borderRadius: 7, backgroundColor: theme.colors.primary },
   radarText: { color: theme.colors.primary, fontSize: 13, fontWeight: '700', letterSpacing: 1, marginTop: 20 },
   radarImei: { color: theme.colors.textDim, fontSize: 13, fontFamily: theme.font.mono, marginTop: 6, letterSpacing: 1 },
+  radarHint: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 10, maxWidth: 240, lineHeight: 17 },
 
   cardVehicle: { color: theme.colors.text, fontSize: 18, fontWeight: '900', letterSpacing: 0.3, marginBottom: 2 },
   cardImei: { color: theme.colors.textMuted, fontSize: 12, fontFamily: theme.font.mono, letterSpacing: 0.5, marginBottom: 10 },

@@ -39,6 +39,7 @@ export type ApiErrorCode =
   | 'invalid_body'
   | 'unauthorized'
   | 'network_error'
+  | 'timeout'
   | 'unknown';
 
 export class ApiError extends Error {
